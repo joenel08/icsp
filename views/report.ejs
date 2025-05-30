@@ -1,0 +1,295 @@
+<% if (!user) { %>
+	<script>
+		alert("Please log in first.");
+		window.location.href = "/";
+	</script>
+	<% } %>
+		<!DOCTYPE html>
+		<html lang="en">
+
+		<head>
+			<title>ICSP - Dashboard Page</title>
+			<%- include('partials/headerlink') %>
+		</head>
+
+		<body class="app">
+			<header class="app-header fixed-top">
+				<%- include('partials/navbar') %>
+					<%- include('partials/sidebar') %>
+			</header><!--//app-header-->
+			
+			<div class="app-wrapper">
+				<div class="app-content pt-3 p-md-3 p-lg-4">
+					<div class="container-xl">
+						<div class="d-flex justify-content-between align-items-center mb-4">
+							<h2 class="mb-0">Concerns Report</h2>
+							<div class="time-filter">
+								<select id="timePeriod" class="form-select" style="width: 200px;">
+									<option value="today">Today</option>
+									<option value="week">This Week</option>
+									<option value="month" selected>This Month</option>
+									<option value="year">This Year</option>
+								</select>
+							</div>
+						</div>
+
+						<div class="app-card app-card-chart h-100 shadow-sm">
+							<div class="app-card-body p-4">
+								<canvas id="reportChart" width="1300" height="650" style="display: block; height: 325px; width: 650px;" class="chartjs-render-monitor"></canvas>
+							</div>
+						</div>
+					</div><!--//container-fluid-->
+				</div><!--//app-content-->
+
+				<!-- Footer -->
+				<%- include('partials/footer') %>
+			</div><!--//app-wrapper-->
+
+			<%- include('partials/footerLink') %>
+
+			<script>
+				let reportChart; // Store chart instance globally
+				const chartColors = {
+				  border: '#e5e9f2',
+				  borders: '#e5e9f2',
+				  text: '#8492a6',
+				  green: '#4fd69c',
+				  blue: '#5b8cff',
+				  red: '#ff767c'
+				};
+			  
+				document.addEventListener('DOMContentLoaded', function() {
+				  // Initialize chart with default (monthly) data
+				  fetchChartData('month');
+				  
+				  // Add event listener for time period select
+				  document.getElementById('timePeriod').addEventListener('change', function() {
+					const period = this.value;
+					fetchChartData(period);
+				  });
+				});
+			  
+				function fetchChartData(period) {
+				  fetch(`/api/concerns-report?period=${period}`)
+					.then(response => response.json())
+					.then(data => {
+					  updateChart(data, period);
+					})
+					.catch(error => {
+					  console.error('Error loading report data:', error);
+					});
+				}
+			  
+				function updateChart(data, period) {
+				  const ctx = document.getElementById('reportChart').getContext('2d');
+				  
+				  // Process data based on selected period
+				  let labels = [];
+				  let titleText = '';
+				  let xAxisTitle = '';
+				  
+				  if (period === 'today') {
+					labels = ['Today'];
+					titleText = 'Today\'s Concerns by Status';
+					// xAxisTitle = 'Today';
+				  } else if (period === 'week') {
+					// Create labels for each day of the current week
+					const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+					const today = new Date();
+					const currentDayOfWeek = today.getDay(); // 0 (Sun) to 6 (Sat)
+					labels = days.slice(0, currentDayOfWeek + 1);
+					titleText = 'This Week\'s Concerns by Status';
+					xAxisTitle = 'Days of Week';
+				  } else if (period === 'month') {
+					// Create labels for each day of the current month up to today
+					const today = new Date();
+					const daysInMonth = today.getDate();
+					labels = [];
+					
+					for (let i = 1; i <= daysInMonth; i++) {
+					  labels.push(i);
+					}
+					titleText = 'This Month\'s Concerns by Status';
+					xAxisTitle = 'Days of Month';
+				  } else { // year
+					const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+								   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+					const today = new Date();
+					labels = months.slice(0, today.getMonth() + 1);
+					titleText = 'This Year\'s Concerns by Status';
+					xAxisTitle = 'Month';
+				  }
+			  
+				  // Initialize counts for each status
+				  const statusCounts = {
+					submitted: Array(labels.length).fill(0),
+					'on-going': Array(labels.length).fill(0),
+					completed: Array(labels.length).fill(0)
+				  };
+			  
+				  // Populate the counts
+				  data.forEach((timeData) => {
+					let index = 0;
+					
+					if (period === 'week') {
+					  index = timeData._id - 1; // Convert from 1-7 (Sun-Sat) to 0-6
+					  if (index < labels.length) {
+						timeData.statuses.forEach(statusData => {
+						  if (statusCounts.hasOwnProperty(statusData.status)) {
+							statusCounts[statusData.status][index] = statusData.count;
+						  }
+						});
+					  }
+					} else if (period === 'month') {
+					  index = timeData._id - 1; // Convert day number to array index
+					  if (index < labels.length) {
+						timeData.statuses.forEach(statusData => {
+						  if (statusCounts.hasOwnProperty(statusData.status)) {
+							statusCounts[statusData.status][index] = statusData.count;
+						  }
+						});
+					  }
+					} else if (period === 'year') {
+					  index = timeData._id - 1; // Convert month number to array index
+					  if (index < labels.length) {
+						timeData.statuses.forEach(statusData => {
+						  if (statusCounts.hasOwnProperty(statusData.status)) {
+							statusCounts[statusData.status][index] = statusData.count;
+						  }
+						});
+					  }
+					} else { // today
+					  timeData.statuses.forEach(statusData => {
+						if (statusCounts.hasOwnProperty(statusData.status)) {
+						  statusCounts[statusData.status][0] = statusData.count;
+						}
+					  });
+					}
+				  });
+			  
+				  // Destroy previous chart if it exists
+				  if (reportChart) {
+					reportChart.destroy();
+				  }
+			  
+				  // Create new chart with the updated design
+				  reportChart = new Chart(ctx, {
+					type: 'bar',
+					data: {
+					  labels: labels,
+					  datasets: [
+						{
+						  label: 'Submitted',
+						  backgroundColor: chartColors.red,
+						  borderColor: chartColors.red,
+						  borderWidth: 1,
+						  maxBarThickness: 16,
+						  data: statusCounts.submitted
+						},
+						{
+						  label: 'On-Going',
+						  backgroundColor: chartColors.blue,
+						  borderColor: chartColors.blue,
+						  borderWidth: 1,
+						  maxBarThickness: 16,
+						  data: statusCounts['on-going']
+						},
+						{
+						  label: 'Completed',
+						  backgroundColor: chartColors.green,
+						  borderColor: chartColors.green,
+						  borderWidth: 1,
+						  maxBarThickness: 16,
+						  data: statusCounts.completed
+						}
+					  ]
+					},
+					options: {
+					  responsive: true,
+					  aspectRatio: 1.5,
+					  legend: {
+						position: 'bottom',
+						align: 'end',
+						labels: {
+						  boxWidth: 12,
+						  padding: 20,
+						  usePointStyle: true,
+						  pointStyle: 'circle',
+						  fontColor: chartColors.text
+						}
+					  },
+					  title: {
+						display: true,
+						text: titleText,
+						fontColor: '#1e1e1e',
+						fontSize: 16,
+						padding: 20
+					  },
+					  tooltips: {
+						mode: 'index',
+						intersect: false,
+						titleMarginBottom: 10,
+						bodySpacing: 10,
+						xPadding: 16,
+						yPadding: 16,
+						borderColor: chartColors.border,
+						borderWidth: 1,
+						backgroundColor: '#fff',
+						bodyFontColor: chartColors.text,
+						titleFontColor: chartColors.text,
+						callbacks: {
+						  label: function(tooltipItem, data) {
+							return data.datasets[tooltipItem.datasetIndex].label + ': ' + tooltipItem.yLabel;
+						  }
+						}
+					  },
+					  scales: {
+						xAxes: [{
+						  display: true,
+						  gridLines: {
+							display: false,
+							drawBorder: false,
+							color: chartColors.border,
+						  },
+						  ticks: {
+							fontColor: chartColors.text
+						  },
+						  scaleLabel: {
+							display: true,
+							labelString: xAxisTitle,
+							fontColor: chartColors.text
+						  }
+						}],
+						yAxes: [{
+						  display: true,
+						  gridLines: {
+							drawBorder: false,
+							color: chartColors.border,
+						  },
+						  ticks: {
+							beginAtZero: true,
+							fontColor: chartColors.text,
+							precision: 0
+						  },
+						  scaleLabel: {
+							display: true,
+							labelString: 'Number of Concerns',
+							fontColor: chartColors.text
+						  }
+						}]
+					  },
+					  layout: {
+						padding: {
+						  left: 0,
+						  right: 0,
+						  top: 0,
+						  bottom: 0
+						}
+					  }
+					}
+				  });
+				}
+			  </script>
+		</body>
+
+		</html>
